@@ -1,0 +1,4 @@
+*.csv
+categories.json
+categories_backup.json
+__pycache__/
