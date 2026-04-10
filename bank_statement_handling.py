@@ -2,21 +2,13 @@
 #           LIBRARIES
 #-------------------------------#
 import pandas as pd
-import numpy as np
 import matplotlib.pyplot as plt
 import datetime
-import csv
 import json
 from typing import Dict, Tuple, List
-import os
 
 # OLLAMA API
 import ollama
-
-# EXPENSE CATEGORIES DATA
-categories_dict = 'categories.json'
-with open(categories_dict, 'r', encoding='utf-8') as d:
-    dict_cat = json.load(d)
 
 #-------------------------------#
 #    INITIALIZING DATAFRAME
@@ -40,6 +32,16 @@ def initialization() -> None:
             print("✗ Invalid CSV format.")
         except Exception as e:
             print(f"✗ Error: {e}")
+
+    try:
+        # EXPENSE CATEGORIES DATA
+        categories_dict = 'categories.json'
+        with open(categories_dict, 'r', encoding='utf-8') as d:
+            dict_cat = json.load(d)
+    except FileNotFoundError:
+        dict_cat = {}
+        with open(categories_dict, 'w', encoding='utf-8') as d:
+            json.dump(dict_cat, d, indent=4)
 
     data = pd.read_csv(file_path, encoding='utf-8')
     data['Completed Date'] = pd.to_datetime(data['Completed Date'])
@@ -66,13 +68,12 @@ def initialization() -> None:
 
     first_day_month, last_day_month = initializing_dates(df)
     
-    main(df, df_expenses, first_day_month, last_day_month)
+    main(df, df_expenses, first_day_month, last_day_month, dict_cat, categories_dict)
 
 #--------------------------#
 #    INITIALIZING DATES
 #--------------------------#
 def initializing_dates(df):
-    current_date = datetime.date.today()
     first_day_month = df.index[0].date().replace(day=1)
 
     if (df.index.month == 12).any():
@@ -85,55 +86,9 @@ def initializing_dates(df):
 #-----------------#
 #    FUNCTIONS
 #-----------------#
-def migrate_categories():
-    """Migrate existing categories.json to use normalized keys."""
-    
-    # Read existing data
-    with open('categories.json', 'r', encoding='utf-8') as f1:
-        old_dict = json.load(f1)
-    
-    # Create backup
-    with open('categories_backup.json', 'w', encoding='utf-8') as f2:
-        json.dump(old_dict, f2, indent=4, ensure_ascii=False)
-    print("✓ Backup created: categories_backup.json")
-    
-    # Migrate to normalized keys
-    new_dict = {}
-    duplicates = []
-    
-    for old_key, value in old_dict.items():
-        normalized_key = normalize_description(old_key)
-        
-        if normalized_key in new_dict:
-            # Found a duplicate - let's see what's happening
-            duplicates.append({
-                'normalized': normalized_key,
-                'existing': new_dict[normalized_key],
-                'new': value
-            })
-        else:
-            new_dict[normalized_key] = value
-    
-    # Show duplicates if any
-    if duplicates:
-        print("\n⚠️  Found duplicates (keeping first occurrence):")
-        for dup in duplicates:
-            print(f"  '{dup['normalized']}':")
-            print(f"    Keeping: {dup['existing']}")
-            print(f"    Skipping: {dup['new']}")
-    
-    # Save migrated data
-    with open('categories.json', 'w', encoding='utf-8') as f3:
-        json.dump(new_dict, f3, indent=4, ensure_ascii=False)
-    
-    print(f"\n✓ Migration complete!")
-    print(f"  Old entries: {len(old_dict)}")
-    print(f"  New entries: {len(new_dict)}")
-    print(f"  Duplicates removed: {len(old_dict) - len(new_dict)}")
-
-def main(df, df_expenses, first_day_month, last_day_month) -> None:
+def main(df, df_expenses, first_day_month, last_day_month, dict_cat, categories_dict) -> None:
     "Main function."
-    df_expenses['Category'] = df_expenses['Description'].apply(categorize_expense)                      # STEP 1 : Categorizes each expense. Creates the "Category" column in the df_expenses.
+    df_expenses['Category'] = df_expenses['Description'].apply(lambda desc : categorize_expense(desc, dict_cat, categories_dict))                      # STEP 1 : Categorizes each expense. Creates the "Category" column in the df_expenses.
     week_dict = separate_weeks(first_day_month, last_day_month)                                         # STEP 2 : Seperate the bank statement into weeks.
     while True:
         try:
@@ -202,7 +157,7 @@ def main_week(df, df_expenses, week_dict) -> None:
     week_vis(df_exp_week)
 
 # CATEGORIZATION OF EXPENSES
-def categorize_expense(description: str) -> str:
+def categorize_expense(description: str, dict_cat: dict, categories_dict: str) -> str:
     '''Returns the category of expense based on the description.'''
     
     # 1. Check patterns first (fastest)
