@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import datetime
 import json
 from typing import Dict, Tuple, List
+import streamlit as st
 
 # OLLAMA API
 import ollama
@@ -14,37 +15,36 @@ import ollama
 #    INITIALIZING DATAFRAME
 #-------------------------------#
 def initialization() -> None:
-    print('-----------------------------------------------')
-    print('💸 Welcome to the Monthly Expenses Tracker! 💸')
-    print('-----------------------------------------------')
+    st.write("""
+             # 💸 Welcome to the Monthly Expenses Tracker! 💸
+             """)
+    
+    file_path = st.file_uploader("Choose a CSV bank statement.", type="csv", key="upload_statement")
+    if file_path is not None:
+        data = pd.read_csv(file_path, encoding='utf-8')
+        st.write(data)
 
-    while True:
-        file_path = input("Paste the statement file name here: ")
         try:
-            data = pd.read_csv(file_path, encoding='utf-8')
-            print("✓ File loaded successfully!")
-            break
+            # EXPENSE CATEGORIES DATA
+            categories_dict = 'categories.json'
+            with open(categories_dict, 'r', encoding='utf-8') as d:
+                dict_cat = json.load(d)
         except FileNotFoundError:
-            print("✗ File not found. Please check the path.")
-        except pd.errors.EmptyDataError:
-            print("✗ The CSV file is empty.")
-        except pd.errors.ParserError:
-            print("✗ Invalid CSV format.")
-        except Exception as e:
-            print(f"✗ Error: {e}")
+            dict_cat = {}
+            with open(categories_dict, 'w', encoding='utf-8') as d:
+                json.dump(dict_cat, d, indent=4)
 
-    try:
-        # EXPENSE CATEGORIES DATA
-        categories_dict = 'categories.json'
-        with open(categories_dict, 'r', encoding='utf-8') as d:
-            dict_cat = json.load(d)
-    except FileNotFoundError:
-        dict_cat = {}
-        with open(categories_dict, 'w', encoding='utf-8') as d:
-            json.dump(dict_cat, d, indent=4)
+        #data = pd.read_csv(file_path, encoding='utf-8')
+        data['Completed Date'] = pd.to_datetime(data['Completed Date'])
+        
+        df, df_expenses = load_dataframes(data)
 
-    data = pd.read_csv(file_path, encoding='utf-8')
-    data['Completed Date'] = pd.to_datetime(data['Completed Date'])
+        first_day_month, last_day_month = initializing_dates(df)
+        
+        main(df, df_expenses, first_day_month, last_day_month, dict_cat, categories_dict)
+
+@st.cache_data
+def load_dataframes(data):
     df = data[['Type', 
             'Product', 
             'Completed Date', 
@@ -65,10 +65,8 @@ def initialization() -> None:
             )
         )
         ].copy()
-
-    first_day_month, last_day_month = initializing_dates(df)
     
-    main(df, df_expenses, first_day_month, last_day_month, dict_cat, categories_dict)
+    return df, df_expenses
 
 #--------------------------#
 #    INITIALIZING DATES
@@ -89,22 +87,20 @@ def initializing_dates(df):
 def main(df, df_expenses, first_day_month, last_day_month, dict_cat, categories_dict) -> None:
     "Main function."
     df_expenses['Category'] = df_expenses['Description'].apply(lambda desc : categorize_expense(desc, dict_cat, categories_dict))                      # STEP 1 : Categorizes each expense. Creates the "Category" column in the df_expenses.
-    week_dict = separate_weeks(first_day_month, last_day_month)                                         # STEP 2 : Seperate the bank statement into weeks.
-    while True:
-        try:
-            choice: int = int(input("Select a Monthly (0) or Weekly (1) analysis : "))
-            if choice == 0:
-                main_month(df,df_expenses, week_dict)
-            elif choice == 1:
-                main_week(df, df_expenses, week_dict)
-            else:
-                print("Invalid choice. Please enter 0 or 1.")
-            break
-        except ValueError:
-            print("Please enter a valid number.")
+    week_dict = separate_weeks(first_day_month, last_day_month)
+    
+    left, right = st.columns(2)
+    if left.button("Monthly Analysis", width="stretch"):
+        main_month(df, df_expenses, week_dict)
+    if right.button("Weekly Analysis", width="stretch"):
+        main_week(df, df_expenses, week_dict)
+                                             # STEP 2 : Seperate the bank statement into weeks.
 
 def main_month(df, df_expenses, week_dict) -> None:
     """Main function for month analysis."""
+    st.write("""
+             # 💸 Montly Analysis! 💸
+             """)
     total_spent = round(abs(df_expenses['Amount'].sum()), 2)
     weekly_totals = {}
     for week in week_dict:
